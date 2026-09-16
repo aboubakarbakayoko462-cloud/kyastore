@@ -1,7 +1,7 @@
 // Change cette valeur pour choisir le style du bandeau héros de la page d'accueil.
 // "orange"  -> fond orange, ambiance "promo vive"
 // "navy"    -> fond marine foncé, ambiance plus sobre/premium
-export const HERO_THEME: "orange" | "navy" = "orange";
+export const HERO_THEME: "orange" | "navy" = "navy";
 
 export const heroThemes = {
   orange: {
