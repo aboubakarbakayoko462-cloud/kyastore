@@ -50,6 +50,8 @@ export default function DashboardPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkAuth() {
@@ -66,18 +68,28 @@ export default function DashboardPage() {
   }, [router]);
 
   async function fetchProducts() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("products")
       .select("*")
       .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Erreur chargement produits :", error);
+      setListError(`Impossible de charger les produits : ${error.message}`);
+      return;
+    }
+    setListError(null);
     if (data) setProducts(data as Product[]);
   }
 
   async function fetchCategories() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("categories")
       .select("*")
       .order("name", { ascending: true });
+    if (error) {
+      console.error("Erreur chargement catégories :", error);
+      return;
+    }
     if (data) setCategories(data as Category[]);
   }
 
@@ -110,7 +122,14 @@ export default function DashboardPage() {
     if (!newName || !newName.trim() || newName.trim() === category.name) return;
     const trimmed = newName.trim();
 
-    await supabase.from("categories").update({ name: trimmed }).eq("id", category.id);
+    const { error: err1 } = await supabase
+      .from("categories")
+      .update({ name: trimmed })
+      .eq("id", category.id);
+    if (err1) {
+      alert(`Échec du renommage : ${err1.message}`);
+      return;
+    }
 
     // Garde les produits deja tagges avec l'ancien nom synchronises
     await supabase.from("products").update({ category: trimmed }).eq("category", category.name);
@@ -126,7 +145,11 @@ export default function DashboardPage() {
       )
     )
       return;
-    await supabase.from("categories").delete().eq("id", category.id);
+    const { error } = await supabase.from("categories").delete().eq("id", category.id);
+    if (error) {
+      alert(`Échec de la suppression : ${error.message}`);
+      return;
+    }
     fetchCategories();
   }
 
@@ -134,6 +157,7 @@ export default function DashboardPage() {
     setForm(emptyForm);
     setImageFile(null);
     setExistingImageUrl(null);
+    setFormError(null);
     setShowForm(true);
   }
 
@@ -149,18 +173,24 @@ export default function DashboardPage() {
     });
     setExistingImageUrl(product.image_url);
     setImageFile(null);
+    setFormError(null);
     setShowForm(true);
   }
 
   async function handleDelete(product: Product) {
     if (!confirm(`Supprimer "${product.title}" ?`)) return;
-    await supabase.from("products").delete().eq("id", product.id);
+    const { error } = await supabase.from("products").delete().eq("id", product.id);
+    if (error) {
+      alert(`Échec de la suppression : ${error.message}`);
+      return;
+    }
     fetchProducts();
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setFormError(null);
 
     let imageUrl = existingImageUrl;
 
@@ -172,10 +202,13 @@ export default function DashboardPage() {
         .from("product-images")
         .upload(filePath, imageFile);
 
-      if (!uploadError) {
-        const { data } = supabase.storage.from("product-images").getPublicUrl(filePath);
-        imageUrl = data.publicUrl;
+      if (uploadError) {
+        setSaving(false);
+        setFormError(`Échec de l'envoi de l'image : ${uploadError.message}`);
+        return;
       }
+      const { data } = supabase.storage.from("product-images").getPublicUrl(filePath);
+      imageUrl = data.publicUrl;
     }
 
     const payload = {
@@ -188,13 +221,18 @@ export default function DashboardPage() {
       image_url: imageUrl,
     };
 
-    if (form.id) {
-      await supabase.from("products").update(payload).eq("id", form.id);
-    } else {
-      await supabase.from("products").insert(payload);
-    }
+    const { error } = form.id
+      ? await supabase.from("products").update(payload).eq("id", form.id)
+      : await supabase.from("products").insert(payload);
 
     setSaving(false);
+
+    if (error) {
+      console.error("Erreur enregistrement produit :", error);
+      setFormError(`Échec de l'enregistrement : ${error.message}`);
+      return;
+    }
+
     setShowForm(false);
     fetchProducts();
   }
@@ -298,6 +336,11 @@ export default function DashboardPage() {
 
         <section>
           <h2 className="font-heading font-semibold text-base mb-3">Produits</h2>
+          {listError && (
+            <div className="bg-danger-bg text-danger text-sm rounded-md px-3.5 py-2.5 mb-3">
+              {listError}
+            </div>
+          )}
           <div className="bg-surface border border-line rounded-lg overflow-hidden">
             {products.length === 0 ? (
               <p className="p-10 text-center text-stone text-sm">
@@ -358,6 +401,11 @@ export default function DashboardPage() {
             <h2 className="font-heading font-semibold text-lg mb-5">
               {form.id ? "Modifier le produit" : "Nouveau produit"}
             </h2>
+            {formError && (
+              <div className="bg-danger-bg text-danger text-sm rounded-md px-3.5 py-2.5 mb-4">
+                {formError}
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
               <input
                 placeholder="Titre du produit"
